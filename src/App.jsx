@@ -974,13 +974,13 @@ export default function App() {
           <div style={{ fontSize:13, color:MUT }}>Roofing Lead Pipeline</div>
           <div style={{ fontSize:10, color:"#2a3f5a" }}>{windowStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} &ndash; {windowEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
           {lastSync && <div style={{ fontSize:11, color:"#2a3f5a" }}>synced {new Date(lastSync).toLocaleDateString()}</div>}
+          <button className="hov" onClick={handleLogout} style={{ background:"none", border:`1px solid #a78bfa40`, borderRadius:6, color:"#a78bfa", fontSize:11, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>Lock</button>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center" }}>
           {syncing && <div style={{ fontSize:11, color:"#f59e0b", marginRight:4 }}>Syncing...</div>}
           {apiKey && <button className="hov" style={btn("#14532d","#22c55e","#22c55e40")} onClick={doSync} disabled={syncing}>Refresh</button>}
           <button className="hov" style={btn("#1a2f4a","#60a5fa","#3b82f640")} onClick={() => setShowSync(true)}>{apiKey ? "GHL Settings" : "Connect GHL"}</button>
           <button className="hov" style={btn(BLUE,"#fff")} onClick={openAdd}>+ Add Lead</button>
-          <button className="hov" style={{ ...btn("#1a1228","#a78bfa","#a78bfa40"), padding:"7px 12px", fontSize:12 }} onClick={handleLogout}>Lock</button>
         </div>
       </div>
 
