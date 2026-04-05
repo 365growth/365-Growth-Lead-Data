@@ -980,7 +980,7 @@ export default function App() {
           {apiKey && <button className="hov" style={btn("#14532d","#22c55e","#22c55e40")} onClick={doSync} disabled={syncing}>Refresh</button>}
           <button className="hov" style={btn("#1a2f4a","#60a5fa","#3b82f640")} onClick={() => setShowSync(true)}>{apiKey ? "GHL Settings" : "Connect GHL"}</button>
           <button className="hov" style={btn(BLUE,"#fff")} onClick={openAdd}>+ Add Lead</button>
-          <button className="hov" style={{ ...btn("transparent",MUT,BRD), padding:"7px 10px", fontSize:11 }} onClick={handleLogout}>Lock</button>
+          <button className="hov" style={{ ...btn("#1a1228","#a78bfa","#a78bfa40"), padding:"7px 12px", fontSize:12 }} onClick={handleLogout}>Lock</button>
         </div>
       </div>
 
