@@ -543,6 +543,16 @@ export default function App() {
   useEffect(() => { load(); }, []);
   useEffect(() => { if (ready) save(); }, [leads, ready]);
 
+  /* Auto-sync every 3 hours */
+  useEffect(() => {
+    if (!apiKey) return;
+    const interval = setInterval(() => {
+      console.log("Auto-sync triggered (3h interval)");
+      autoSync(apiKey, fbToken);
+    }, 3 * 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [apiKey, fbToken]);
+
   async function load() {
     try {
       const r = await window.storage.get("365g-pipe-v2");
