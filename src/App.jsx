@@ -539,9 +539,17 @@ export default function App() {
   const [fbToken, setFbToken]     = useState("");
   const [adSpend, setAdSpend]     = useState(null);
   const [syncing, setSyncing]     = useState(false);
+  const [authed, setAuthed]       = useState(false);
+  const [pw, setPw]               = useState("");
+  const [lockError, setLockError] = useState(false);
 
-  useEffect(() => { load(); }, []);
-  useEffect(() => { if (ready) save(); }, [leads, ready]);
+  useEffect(() => {
+    const saved = sessionStorage.getItem("365g-auth");
+    if (saved === "1") setAuthed(true);
+  }, []);
+
+  useEffect(() => { if (authed) load(); }, [authed]);
+  useEffect(() => { if (ready && authed) save(); }, [leads, ready]);
 
   /* Auto-sync every 3 hours */
   useEffect(() => {
@@ -853,6 +861,40 @@ export default function App() {
     flash("API key removed");
   }
 
+  /* ── Authentication ── */
+  async function handleLogin() {
+    /* Load the stored password hash, or set one if first time */
+    const stored = localStorage.getItem("365g-pw-hash");
+    const hash = await hashPassword(pw);
+    if (!stored) {
+      /* First time — set the password */
+      localStorage.setItem("365g-pw-hash", hash);
+      sessionStorage.setItem("365g-auth", "1");
+      setAuthed(true);
+      setPw("");
+    } else if (hash === stored) {
+      sessionStorage.setItem("365g-auth", "1");
+      setAuthed(true);
+      setPw("");
+      setLockError(false);
+    } else {
+      setLockError(true);
+    }
+  }
+
+  function handleLogout() {
+    sessionStorage.removeItem("365g-auth");
+    setAuthed(false);
+  }
+
+  async function hashPassword(password) {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(password + "365growth-salt");
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
   function fmtApptDate(d) {
     if (!d) return "—";
     const dt = new Date(d);
@@ -870,6 +912,39 @@ export default function App() {
 
   const inp  = { padding:"8px 10px", background:"#0a1628", border:`1px solid ${BRD}`, borderRadius:6, color:TXT, fontSize:13, fontFamily:"inherit", outline:"none", width:"100%", boxSizing:"border-box" };
   const btn  = (bg,col,brd) => ({ padding:"7px 14px", background:bg||"transparent", color:col||TXT, border:`1px solid ${brd||"transparent"}`, borderRadius:6, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" });
+
+  /* ── LOGIN SCREEN ── */
+  if (!authed) {
+    return (
+      <div style={{ fontFamily:"'DM Sans',system-ui,sans-serif", background:BG, minHeight:"100vh", color:TXT, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');`}</style>
+        <div style={{ background:SRF, border:`1px solid ${BRD}`, borderRadius:12, padding:40, width:360, textAlign:"center" }}>
+          <div style={{ fontWeight:800, fontSize:22, letterSpacing:1.2, color:BLUE, marginBottom:4 }}>
+            365<span style={{ color:"#fff" }}>GROWTH</span>
+          </div>
+          <div style={{ fontSize:12, color:MUT, marginBottom:28 }}>Roofing Lead Pipeline</div>
+          <div style={{ marginBottom:16 }}>
+            <input
+              style={{ ...inp, textAlign:"center", fontSize:15, padding:"12px 16px", letterSpacing:2 }}
+              type="password"
+              placeholder={localStorage.getItem("365g-pw-hash") ? "Enter password" : "Set your password"}
+              value={pw}
+              onChange={e => { setPw(e.target.value); setLockError(false); }}
+              onKeyDown={e => e.key === "Enter" && handleLogin()}
+              autoFocus
+            />
+          </div>
+          {lockError && <div style={{ fontSize:12, color:"#ef4444", marginBottom:12 }}>Incorrect password</div>}
+          <button className="hov" style={{ ...btn(BLUE,"#fff"), width:"100%", padding:"11px 14px", fontSize:14 }} onClick={handleLogin}>
+            {localStorage.getItem("365g-pw-hash") ? "Unlock" : "Set Password & Enter"}
+          </button>
+          <div style={{ fontSize:10, color:"#2a3f5a", marginTop:16 }}>
+            {localStorage.getItem("365g-pw-hash") ? "Password required to access dashboard" : "First time? Choose a password to secure your dashboard"}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily:"'DM Sans',system-ui,sans-serif", background:BG, minHeight:"100vh", color:TXT, fontSize:14, lineHeight:1.4 }}>
@@ -903,6 +978,7 @@ export default function App() {
           {apiKey && <button className="hov" style={btn("#14532d","#22c55e","#22c55e40")} onClick={doSync} disabled={syncing}>Refresh</button>}
           <button className="hov" style={btn("#1a2f4a","#60a5fa","#3b82f640")} onClick={() => setShowSync(true)}>{apiKey ? "GHL Settings" : "Connect GHL"}</button>
           <button className="hov" style={btn(BLUE,"#fff")} onClick={openAdd}>+ Add Lead</button>
+          <button className="hov" style={{ ...btn("transparent",MUT,BRD), padding:"7px 10px", fontSize:11 }} onClick={handleLogout}>Lock</button>
         </div>
       </div>
 
