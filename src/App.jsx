@@ -544,8 +544,9 @@ export default function App() {
   const [lockError, setLockError] = useState(false);
 
   useEffect(() => {
-    const saved = sessionStorage.getItem("365g-auth");
-    if (saved === "1") setAuthed(true);
+    const saved = localStorage.getItem("365g-auth-expires");
+    if (saved && Date.now() < Number(saved)) setAuthed(true);
+    else localStorage.removeItem("365g-auth-expires");
   }, []);
 
   useEffect(() => { if (authed) load(); }, [authed]);
@@ -866,14 +867,15 @@ export default function App() {
     /* Load the stored password hash, or set one if first time */
     const stored = localStorage.getItem("365g-pw-hash");
     const hash = await hashPassword(pw);
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
     if (!stored) {
       /* First time — set the password */
       localStorage.setItem("365g-pw-hash", hash);
-      sessionStorage.setItem("365g-auth", "1");
+      localStorage.setItem("365g-auth-expires", String(Date.now() + sevenDays));
       setAuthed(true);
       setPw("");
     } else if (hash === stored) {
-      sessionStorage.setItem("365g-auth", "1");
+      localStorage.setItem("365g-auth-expires", String(Date.now() + sevenDays));
       setAuthed(true);
       setPw("");
       setLockError(false);
@@ -883,7 +885,7 @@ export default function App() {
   }
 
   function handleLogout() {
-    sessionStorage.removeItem("365g-auth");
+    localStorage.removeItem("365g-auth-expires");
     setAuthed(false);
   }
 
