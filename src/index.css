@@ -1,0 +1,4 @@
+/* Reset — pipeline uses inline styles */
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #060d1a; margin: 0; }
+#root { width: 100%; max-width: 100%; }
