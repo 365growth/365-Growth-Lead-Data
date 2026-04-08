@@ -11,9 +11,19 @@ npm run dev
 
 Open the URL Vite prints (usually `http://localhost:5173`).
 
-- **First visit:** set a dashboard password (stored locally as a hash). This is screen-lock style protection, not a server login.
-- **GHL:** open **GHL Settings**, paste your private app token (`pit-…`), then **Sync Now**. Keys are saved in browser storage (`localStorage` or Cursor’s `window.storage` shim) so you do not re-enter them every time you unlock.
+- **First visit:** set a dashboard password (stored locally as a hash). This is screen-lock style protection, not a server login. **Use the same password on every browser** so the server vault (below) can recognize you.
+- **GHL:** open **GHL Settings**, paste your private app token (`pit-…`), then **Sync Now**. Keys are saved locally **and** (on Vercel) to a **server vault** so you do not re-enter them on each device.
 - **Facebook (optional):** add a Marketing API user token to pull ad spend for the same rolling window used in sync.
+
+### Cross-browser sync (production on Vercel)
+
+`localStorage` is **per browser**. To reuse GHL + Facebook keys on **another browser or computer**, the app posts them to **`/api/vault`** (see [`api/vault.js`](api/vault.js)), which stores them in **Vercel KV / Redis** keyed by your **password hash** (not the plain password).
+
+1. In [Vercel](https://vercel.com) → your project → **Storage** → add **Redis** (e.g. Upstash from the Marketplace) or use an existing KV/Redis store linked to the project.
+2. Link the store to the project so **`KV_REST_API_URL`** and **`KV_REST_API_TOKEN`** appear under **Settings → Environment Variables** (Production).
+3. **Redeploy** after linking.
+
+If those variables are missing, `/api/vault` returns 503 and credentials stay **local-only** (same behavior as before).
 
 ## Scripts
 
@@ -45,9 +55,9 @@ Rebuild after changing `.env`.
 Both use [`src/lib/storage.js`](src/lib/storage.js) (`window.storage` when present, e.g. Cursor, otherwise `localStorage`).
 - **Password session:** `365g-auth-expires` and `365g-pw-hash` in `localStorage`.
 
-## Optional backend (BFF)
+## Optional full BFF
 
-Tokens today live in the browser by design for a single-operator workflow. If you ever need secrets **only on a server**, see [`docs/OPTIONAL_BFF.md`](docs/OPTIONAL_BFF.md).
+The **vault** above only syncs API keys across browsers. If you ever need **all** GHL/FB traffic to go through a server (no tokens in the browser at all), see [`docs/OPTIONAL_BFF.md`](docs/OPTIONAL_BFF.md).
 
 ## Tech stack
 

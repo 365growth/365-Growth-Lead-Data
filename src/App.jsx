@@ -4,6 +4,7 @@ import {
   STAGE, ALL_SID, SAMPLE, BLANK, SOURCES, APPT_STATUS, SID, SIDES,
 } from "./constants/stages.js";
 import { PIPE_KEY, CRED_KEY, storageGet, storageSet, storageRemove } from "./lib/storage.js";
+import { vaultLoad, vaultSave, vaultClearTokens } from "./lib/remoteVault.js";
 import {
   filterLeadsInWindow,
   getDateWindowBounds,
@@ -94,6 +95,16 @@ export default function App() {
         if (c.fbToken) setFbToken(c.fbToken);
         if (c.apiKey)  autoSync(c.apiKey, c.fbToken);
       }
+
+      const pwHash = localStorage.getItem("365g-pw-hash");
+      if (pwHash) {
+        const vr = await vaultLoad(pwHash);
+        if (!vr.unauthorized && !vr.unavailable && vr.vaultExists) {
+          if (vr.ghl) setApiKey(vr.ghl);
+          if (vr.fb) setFbToken(vr.fb);
+          if (vr.ghl) autoSync(vr.ghl, vr.fb || "");
+        }
+      }
     } catch (e) {
       console.warn("Load failed:", e.message);
       setSyncBanner({ err: true, msg: "Could not load saved data. Starting with sample leads." });
@@ -113,6 +124,8 @@ export default function App() {
       } else {
         await storageRemove(CRED_KEY);
       }
+      const pwHash = localStorage.getItem("365g-pw-hash");
+      if (pwHash) await vaultSave(pwHash, apiKey, fbToken);
     } catch { /* ignore */ }
   }
 
@@ -283,6 +296,8 @@ export default function App() {
     setAdSpend(null);
     try {
       await storageRemove(CRED_KEY);
+      const h = localStorage.getItem("365g-pw-hash");
+      if (h) await vaultClearTokens(h);
     } catch { /* ignore */ }
     flash("API credentials removed");
   }
@@ -308,12 +323,37 @@ export default function App() {
     const stored = localStorage.getItem("365g-pw-hash");
     const hash = await hashPassword(pw);
     const sevenDays = 7 * 24 * 60 * 60 * 1000;
+
     if (!stored) {
+      const vr = await vaultLoad(hash);
+      if (vr.unauthorized) {
+        setLockError(true);
+        return;
+      }
+      if (vr.unavailable) {
+        localStorage.setItem("365g-pw-hash", hash);
+        localStorage.setItem("365g-auth-expires", String(Date.now() + sevenDays));
+        setAuthed(true);
+        setPw("");
+        return;
+      }
+      if (vr.vaultExists) {
+        localStorage.setItem("365g-pw-hash", hash);
+        localStorage.setItem("365g-auth-expires", String(Date.now() + sevenDays));
+        setAuthed(true);
+        setPw("");
+        setLockError(false);
+        return;
+      }
       localStorage.setItem("365g-pw-hash", hash);
+      await vaultSave(hash, "", "");
       localStorage.setItem("365g-auth-expires", String(Date.now() + sevenDays));
       setAuthed(true);
       setPw("");
-    } else if (hash === stored) {
+      return;
+    }
+
+    if (hash === stored) {
       localStorage.setItem("365g-auth-expires", String(Date.now() + sevenDays));
       setAuthed(true);
       setPw("");
