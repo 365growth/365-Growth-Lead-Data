@@ -49,3 +49,15 @@ export async function vaultClearTokens(passwordHash) {
     return false;
   }
 }
+
+/** GET /api/vault — whether Redis is configured so tokens can sync across browsers. */
+export async function vaultStatus() {
+  try {
+    const r = await fetch("/api/vault", { method: "GET" });
+    if (!r.ok) return { redisConfigured: false };
+    const j = await r.json();
+    return { redisConfigured: Boolean(j.redisConfigured) };
+  } catch {
+    return { redisConfigured: false };
+  }
+}

@@ -4,7 +4,7 @@ import {
   STAGE, ALL_SID, SAMPLE, BLANK, SOURCES, APPT_STATUS, SID, SIDES,
 } from "./constants/stages.js";
 import { PIPE_KEY, CRED_KEY, storageGet, storageSet, storageRemove } from "./lib/storage.js";
-import { vaultLoad, vaultSave, vaultClearTokens } from "./lib/remoteVault.js";
+import { vaultLoad, vaultSave, vaultClearTokens, vaultStatus } from "./lib/remoteVault.js";
 import {
   filterLeadsInWindow,
   getDateWindowBounds,
@@ -41,6 +41,8 @@ export default function App() {
   const [daysBack, setDaysBack]   = useState(30);
   const [daysAhead, setDaysAhead] = useState(15);
   const [syncBanner, setSyncBanner] = useState(null);
+  /** null = not checked yet; 'loading'; boolean = redisConfigured */
+  const [cloudVault, setCloudVault] = useState(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("365g-auth-expires");
@@ -53,6 +55,14 @@ export default function App() {
   useEffect(() => {
     if (ready && authed) save();
   }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
+
+  useEffect(() => {
+    if (!showSync) return;
+    setCloudVault("loading");
+    vaultStatus()
+      .then(({ redisConfigured }) => setCloudVault(redisConfigured))
+      .catch(() => setCloudVault(false));
+  }, [showSync]);
 
   useEffect(() => {
     if (!apiKey) return;
@@ -843,6 +853,42 @@ export default function App() {
       {showSync && (
         <Modal onClose={() => setShowSync(false)} title="GoHighLevel Connection" maxW={480}>
           <div style={{ padding:20 }}>
+            <div
+              style={{
+                marginBottom:16,
+                padding:"10px 12px",
+                borderRadius:8,
+                border:`1px solid ${BRD}`,
+                background:"#0a1628",
+                fontSize:12,
+                lineHeight:1.5,
+                display:"flex",
+                alignItems:"flex-start",
+                gap:8,
+              }}
+            >
+              {cloudVault === null || cloudVault === "loading" ? (
+                <span style={{ color:MUT }}>Checking cloud sync…</span>
+              ) : cloudVault ? (
+                <>
+                  <span style={{ color:GRN, fontSize:14, lineHeight:1.2, flexShrink:0 }} aria-hidden>
+                    {"\u25CF"}
+                  </span>
+                  <span style={{ color:"#cbd5e1" }}>
+                    Cloud sync on — GHL and Facebook tokens can sync to other browsers when you use the same lock password.
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span style={{ color:"#f59e0b", fontSize:14, lineHeight:1.2, flexShrink:0 }} aria-hidden>
+                    {"\u25CF"}
+                  </span>
+                  <span style={{ color:MUT }}>
+                    Cloud sync unavailable — credentials stay on this device only (e.g. local dev or Redis not configured on the server).
+                  </span>
+                </>
+              )}
+            </div>
             <div style={{ marginBottom:16 }}>
               <div style={{ fontSize:11, color:MUT, marginBottom:6, letterSpacing:.5 }}>GHL API Key (Private App Token)</div>
               <input
