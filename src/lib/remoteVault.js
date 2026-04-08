@@ -1,4 +1,4 @@
-/** POST /api/vault — sync GHL + FB tokens across browsers (Vercel KV). */
+/** POST /api/vault — sync GHL + FB tokens across browsers (Upstash Redis on Vercel). */
 
 async function postVault(body) {
   const r = await fetch("/api/vault", {

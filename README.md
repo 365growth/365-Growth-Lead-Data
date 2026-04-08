@@ -17,13 +17,14 @@ Open the URL Vite prints (usually `http://localhost:5173`).
 
 ### Cross-browser sync (production on Vercel)
 
-`localStorage` is **per browser**. To reuse GHL + Facebook keys on **another browser or computer**, the app posts them to **`/api/vault`** (see [`api/vault.js`](api/vault.js)), which stores them in **Vercel KV / Redis** keyed by your **password hash** (not the plain password).
+`localStorage` is **per browser**. To reuse GHL + Facebook keys on **another browser or computer**, the app posts them to **`/api/vault`** (see [`api/vault.js`](api/vault.js)), which stores them in **Upstash Redis** (REST) keyed by your **password hash** (not the plain password).
 
-1. In [Vercel](https://vercel.com) → your project → **Storage** → add **Redis** (e.g. Upstash from the Marketplace) or use an existing KV/Redis store linked to the project.
-2. Link the store to the project so **`KV_REST_API_URL`** and **`KV_REST_API_TOKEN`** appear under **Settings → Environment Variables** (Production).
-3. **Redeploy** after linking.
+1. In [Vercel](https://vercel.com) → **Storage** → create or open your **Redis** database (e.g. `redis-cyan-lantern`).
+2. Click **Connect Project** and choose the **same Vercel project** that deploys this app. Vercel injects a TCP URL — usually **`REDIS_URL`**. If you set a **custom prefix** (e.g. `STORAGE`), the variable is **`STORAGE_URL`** instead; the vault accepts either.
+3. Alternatively, Upstash REST credentials work too: **`UPSTASH_REDIS_REST_URL`** + **`UPSTASH_REDIS_REST_TOKEN`**, or legacy **`KV_REST_API_URL`** + **`KV_REST_API_TOKEN`**.
+4. **Redeploy** the project after linking or changing env vars (Deployments → **Redeploy**, or push a commit).
 
-If those variables are missing, `/api/vault` returns 503 and credentials stay **local-only** (same behavior as before).
+To verify, open **`GET /api/vault`** (e.g. `https://your-domain/api/vault`). You want **`"redisConfigured": true`**. If it is **`false`**, the vault stays **local-only** and `POST` returns **503**.
 
 ## Scripts
 
