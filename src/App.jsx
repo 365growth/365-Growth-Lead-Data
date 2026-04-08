@@ -3,7 +3,7 @@ import { GHL_CAL, FB_AD_ACCT } from "./config.js";
 import {
   STAGE, ALL_SID, SAMPLE, BLANK, SOURCES, APPT_STATUS, SID, SIDES,
 } from "./constants/stages.js";
-import { PIPE_KEY, storageGet, storageSet } from "./lib/storage.js";
+import { PIPE_KEY, CRED_KEY, storageGet, storageSet, storageRemove } from "./lib/storage.js";
 import {
   filterLeadsInWindow,
   getDateWindowBounds,
@@ -51,7 +51,7 @@ export default function App() {
 
   useEffect(() => {
     if (ready && authed) save();
-  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend]); // eslint-disable-line react-hooks/exhaustive-deps -- save mirrors persisted fields
+  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
 
   useEffect(() => {
     if (!apiKey) return;
@@ -64,16 +64,35 @@ export default function App() {
 
   async function load() {
     try {
-      const raw = await storageGet(PIPE_KEY);
+      let raw = await storageGet(PIPE_KEY);
+      let credRaw = await storageGet(CRED_KEY);
+
+      if (raw) {
+        const d = JSON.parse(raw);
+        /* Legacy: API keys lived inside PIPE_KEY — migrate once so lead saves never wipe them */
+        if ((d.apiKey || d.fbToken) && !credRaw) {
+          const { apiKey: ak, fbToken: ft, ...rest } = d;
+          await storageSet(CRED_KEY, JSON.stringify({ apiKey: ak || "", fbToken: ft || "" }));
+          await storageSet(PIPE_KEY, JSON.stringify(rest));
+          credRaw = await storageGet(CRED_KEY);
+          raw = await storageGet(PIPE_KEY);
+        }
+      }
+
       if (raw) {
         const d = JSON.parse(raw);
         if (d.leads?.length) setLeads(d.leads);
         if (d.lastSync)      setLastSync(d.lastSync);
-        if (d.fbToken)       setFbToken(d.fbToken);
         if (d.adSpend)       setAdSpend(d.adSpend);
         if (typeof d.daysBack === "number")  setDaysBack(d.daysBack);
         if (typeof d.daysAhead === "number") setDaysAhead(d.daysAhead);
-        if (d.apiKey)        { setApiKey(d.apiKey); autoSync(d.apiKey, d.fbToken); }
+      }
+
+      if (credRaw) {
+        const c = JSON.parse(credRaw);
+        if (c.apiKey)  setApiKey(c.apiKey);
+        if (c.fbToken) setFbToken(c.fbToken);
+        if (c.apiKey)  autoSync(c.apiKey, c.fbToken);
       }
     } catch (e) {
       console.warn("Load failed:", e.message);
@@ -83,11 +102,17 @@ export default function App() {
   }
 
   async function save() {
+    if (!ready || !authed) return;
     try {
       await storageSet(
         PIPE_KEY,
-        JSON.stringify({ leads, lastSync, apiKey, fbToken, adSpend, daysBack, daysAhead }),
+        JSON.stringify({ leads, lastSync, adSpend, daysBack, daysAhead }),
       );
+      if (apiKey.trim() || fbToken.trim()) {
+        await storageSet(CRED_KEY, JSON.stringify({ apiKey, fbToken }));
+      } else {
+        await storageRemove(CRED_KEY);
+      }
     } catch { /* ignore */ }
   }
 
@@ -252,10 +277,13 @@ export default function App() {
     } catch { flash("Invalid JSON format", true); }
   }
 
-  function disconnectGHL() {
+  async function disconnectGHL() {
     setApiKey("");
     setFbToken("");
     setAdSpend(null);
+    try {
+      await storageRemove(CRED_KEY);
+    } catch { /* ignore */ }
     flash("API credentials removed");
   }
 

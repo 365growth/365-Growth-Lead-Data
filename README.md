@@ -39,7 +39,10 @@ Rebuild after changing `.env`.
 
 ## Data storage
 
-- **Pipeline data** (leads, last sync time, API tokens, ad snapshot, date-window prefs): key `365g-pipe-v2` via [`src/lib/storage.js`](src/lib/storage.js) — uses `window.storage` when present (e.g. Cursor), otherwise `localStorage`.
+- **Pipeline data** (leads, last sync, ad snapshot, date-window prefs): key `365g-pipe-v2` — **no API secrets** in this blob.
+- **GHL + Facebook tokens:** key `365g-creds-v1` — stored separately so saving leads never overwrites your keys.
+
+Both use [`src/lib/storage.js`](src/lib/storage.js) (`window.storage` when present, e.g. Cursor, otherwise `localStorage`).
 - **Password session:** `365g-auth-expires` and `365g-pw-hash` in `localStorage`.
 
 ## Optional backend (BFF)

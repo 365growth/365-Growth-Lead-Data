@@ -1,5 +1,7 @@
-/** Persist pipeline blob: Cursor `window.storage` when present, else localStorage. */
+/** Persist pipeline data (no API secrets — avoids accidental overwrites when saving leads). */
 export const PIPE_KEY = "365g-pipe-v2";
+/** GHL + Facebook tokens only (separate from PIPE_KEY so lead saves never wipe keys). */
+export const CRED_KEY = "365g-creds-v1";
 
 function hasWindowStorage() {
   return (
@@ -49,6 +51,18 @@ export async function storageSet(key, value) {
   } catch {
     /* ignore */
   }
+}
+
+/** Remove key from both storage backends when possible. */
+export async function storageRemove(key) {
+  try {
+    if (hasWindowStorage() && typeof window.storage.remove === "function") {
+      await window.storage.remove(key);
+    }
+  } catch { /* ignore */ }
+  try {
+    localStorage.removeItem(key);
+  } catch { /* ignore */ }
 }
 
 /** Install `window.storage` shim (localStorage) before React mounts. */
