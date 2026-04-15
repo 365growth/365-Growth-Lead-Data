@@ -344,46 +344,68 @@ export async function fetchGHLAppointments(apiKey) {
   return allEvents;
 }
 
-export function enrichLeadsWithAppointments(leads, events) {
-  const contactAppts = {};
+function parseApptStatus(appt) {
+  const s = (appt.appointmentStatus || appt.status || "").toLowerCase();
+  if (s.includes("show") && !s.includes("no")) return "showed";
+  if (s.includes("no_show") || s.includes("noshow") || s.includes("no show")) return "no_show";
+  if (s.includes("cancel")) return "cancelled";
+  if (s.includes("reschedule")) return "rescheduled";
+  return "confirmed";
+}
+
+function normalizeAppt(evt) {
+  return {
+    startTime: evt.startTime || evt.start || null,
+    endTime: evt.endTime || evt.end || null,
+    status: parseApptStatus(evt),
+    title: evt.title || evt.name || "",
+  };
+}
+
+export function enrichLeadsWithAppointments(leads, events, now = new Date()) {
+  const byContact = {};
   for (const evt of events) {
     const cid = evt.contactId;
     if (!cid) continue;
-    const existing = contactAppts[cid];
-    if (!existing || new Date(evt.startTime) > new Date(existing.startTime)) {
-      contactAppts[cid] = evt;
-    }
+    (byContact[cid] = byContact[cid] || []).push(evt);
   }
 
   return leads.map(lead => {
-    let appt = contactAppts[lead.contactId] || null;
-    if (!appt) {
+    let matched = byContact[lead.contactId] ? [...byContact[lead.contactId]] : [];
+    if (matched.length === 0) {
       for (const evt of events) {
         const ec = evt.contact || {};
         if ((lead.email && ec.email === lead.email) || (lead.phone && ec.phone === lead.phone)) {
-          if (!appt || new Date(evt.startTime) > new Date(appt.startTime)) appt = evt;
+          matched.push(evt);
         }
       }
     }
 
-    if (appt) {
-      let apptStatus = "confirmed";
-      const s = (appt.appointmentStatus || appt.status || "").toLowerCase();
-      if (s.includes("show") && !s.includes("no"))   apptStatus = "showed";
-      else if (s.includes("no_show") || s.includes("noshow") || s.includes("no show")) apptStatus = "no_show";
-      else if (s.includes("cancel"))                  apptStatus = "cancelled";
-      else if (s.includes("reschedule"))              apptStatus = "rescheduled";
-      else if (s.includes("confirm"))                 apptStatus = "confirmed";
+    if (matched.length === 0) return lead;
 
-      return {
-        ...lead,
-        apptDate: appt.startTime || appt.start,
-        apptStatus,
-        apptTitle: appt.title || appt.name || "",
-        apptEndDate: appt.endTime || appt.end || null,
-      };
-    }
-    return lead;
+    const appts = matched
+      .map(normalizeAppt)
+      .filter(a => a.startTime)
+      .sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+    const everShowed = appts.some(a => a.status === "showed");
+    const pastAppts = appts.filter(a => new Date(a.startTime) < now);
+    const hadPastAppt = pastAppts.length > 0;
+    const latestPastApptStatus = hadPastAppt ? pastAppts[pastAppts.length - 1].status : null;
+
+    const latest = appts[appts.length - 1];
+
+    return {
+      ...lead,
+      apptDate: latest.startTime,
+      apptStatus: latest.status,
+      apptTitle: latest.title,
+      apptEndDate: latest.endTime,
+      appts,
+      everShowed,
+      hadPastAppt,
+      latestPastApptStatus,
+    };
   });
 }
 
