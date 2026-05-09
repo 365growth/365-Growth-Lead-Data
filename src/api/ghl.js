@@ -1,5 +1,34 @@
 import { GHL_BASE, GHL_LOC, GHL_PIPE, GHL_CAL } from "../config.js";
-import { GHL_STAGE_MAP, STAGE, STAGE_NAME_MAP } from "../constants/stages.js";
+import { GHL_STAGE_MAP, STAGE, STAGE_NAME_MAP, SID } from "../constants/stages.js";
+
+/**
+ * Keyword aliases for matching arbitrary GHL stage names to internal SIDs.
+ * Order matters: more specific phrases first, since the first hit wins.
+ * Each phrase is normalized (lowercased, non-letters stripped) before comparison.
+ */
+const STAGE_ALIASES = [
+  { sid: SID.NOSHOW,   phrases: ["noshow", "didnotshow", "missed"] },
+  { sid: SID.CANCEL,   phrases: ["cancelled", "canceled", "cancel"] },
+  { sid: SID.RESCHED,  phrases: ["reschedul"] },
+  { sid: SID.LOST,     phrases: ["closedlost", "lost"] },
+  { sid: SID.PAID,     phrases: ["closedpaid", "paid"] },
+  { sid: SID.WON,      phrases: ["closedwon", "won", "signed"] },
+  { sid: SID.TRIAL,    phrases: ["trialstarted", "freetrial", "trial"] },
+  { sid: SID.ATTENDED, phrases: ["apptattended", "callattended", "attended", "showed", "completedcall"] },
+  { sid: SID.BOOKED,   phrases: ["apptbooked", "callbooked", "callset", "appointmentset", "scheduled", "booked"] },
+  { sid: SID.DQ,       phrases: ["disqualified", "unqualified"] },
+  { sid: SID.NEW,      phrases: ["newlead", "new"] },
+];
+
+export function matchStageByAlias(stageName) {
+  if (!stageName) return null;
+  const normalized = stageName.toLowerCase().replace(/[^a-z]/g, "");
+  if (STAGE_NAME_MAP[normalized]) return STAGE_NAME_MAP[normalized];
+  for (const { sid, phrases } of STAGE_ALIASES) {
+    if (phrases.some(p => normalized.includes(p))) return sid;
+  }
+  return null;
+}
 
 let _ghlStageMap = {};
 let _cfDefs = {};
@@ -48,18 +77,9 @@ async function fetchPipelineStages(apiKey) {
       if (!stages.length) continue;
       console.log("=== GHL PIPELINE STAGES ===");
       stages.forEach(s => {
-        console.log(`  GHL stage: "${s.name}" → id: ${s.id}`);
-        const normalized = s.name.toLowerCase().replace(/[^a-z]/g, "");
-        if (STAGE_NAME_MAP[normalized]) {
-          _ghlStageMap[s.id] = STAGE_NAME_MAP[normalized];
-        } else {
-          for (const [appName, appId] of Object.entries(STAGE_NAME_MAP)) {
-            if (normalized.includes(appName) || appName.includes(normalized)) {
-              _ghlStageMap[s.id] = appId;
-              break;
-            }
-          }
-        }
+        const matched = matchStageByAlias(s.name);
+        console.log(`  GHL stage: "${s.name}" → ${matched ? `mapped to ${matched}` : "UNMAPPED"} (id: ${s.id})`);
+        if (matched) _ghlStageMap[s.id] = matched;
       });
       console.log("=== DYNAMIC STAGE MAP ===", _ghlStageMap);
       return;
@@ -84,11 +104,12 @@ function buildStageMapFromOpps(opps) {
 function mapGHLStage(ghlStageId, ghlStageName) {
   if (_ghlStageMap[ghlStageId]) return _ghlStageMap[ghlStageId];
   if (GHL_STAGE_MAP[ghlStageId]) return GHL_STAGE_MAP[ghlStageId];
-  if (ghlStageName) {
-    const key = ghlStageName.toLowerCase().replace(/[^a-z]/g, "");
-    if (STAGE_NAME_MAP[key]) return STAGE_NAME_MAP[key];
+  const aliasMatch = matchStageByAlias(ghlStageName);
+  if (aliasMatch) {
+    _ghlStageMap[ghlStageId] = aliasMatch;
+    return aliasMatch;
   }
-  return "a83aba03-5543-466c-8d0e-55374489800e";
+  return SID.NEW;
 }
 
 function nullSafe(v) { return (v && v !== "undefined" && v !== "null") ? v : ""; }
