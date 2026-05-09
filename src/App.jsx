@@ -11,7 +11,7 @@ import {
   countsByStage,
   computeDashboardMetrics,
 } from "./lib/metrics.js";
-import { fetchFBAdSpend } from "./api/facebook.js";
+import { fetchFBAdSpend, fetchFBCampaigns } from "./api/facebook.js";
 import {
   fetchGHLLeads,
   fetchGHLAppointments,
@@ -38,8 +38,12 @@ export default function App() {
   const [authed, setAuthed]       = useState(false);
   const [pw, setPw]               = useState("");
   const [lockError, setLockError] = useState(false);
+  const [preset, setPreset]       = useState("30d"); // "7d" | "30d" | "90d" | "all" | "custom"
   const [daysBack, setDaysBack]   = useState(30);
   const [daysAhead, setDaysAhead] = useState(15);
+  const [fbCampaigns, setFbCampaigns]               = useState([]);
+  const [fbCampaignsLoading, setFbCampaignsLoading] = useState(false);
+  const [selectedFbCampaignIds, setSelectedFbCampaignIds] = useState([]);
   const [syncBanner, setSyncBanner] = useState(null);
   /** null = not checked yet; 'loading'; boolean = redisConfigured */
   const [cloudVault, setCloudVault] = useState(null);
@@ -54,7 +58,7 @@ export default function App() {
 
   useEffect(() => {
     if (ready && authed) save();
-  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
+  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead, preset, selectedFbCampaignIds]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
 
   useEffect(() => {
     if (!showSync) return;
@@ -97,6 +101,8 @@ export default function App() {
         if (d.adSpend)       setAdSpend(d.adSpend);
         if (typeof d.daysBack === "number")  setDaysBack(d.daysBack);
         if (typeof d.daysAhead === "number") setDaysAhead(d.daysAhead);
+        if (typeof d.preset === "string")    setPreset(d.preset);
+        if (Array.isArray(d.selectedFbCampaignIds)) setSelectedFbCampaignIds(d.selectedFbCampaignIds);
       }
 
       if (credRaw) {
@@ -127,7 +133,7 @@ export default function App() {
     try {
       await storageSet(
         PIPE_KEY,
-        JSON.stringify({ leads, lastSync, adSpend, daysBack, daysAhead }),
+        JSON.stringify({ leads, lastSync, adSpend, daysBack, daysAhead, preset, selectedFbCampaignIds }),
       );
       if (apiKey.trim() || fbToken.trim()) {
         await storageSet(CRED_KEY, JSON.stringify({ apiKey, fbToken }));
@@ -144,12 +150,13 @@ export default function App() {
     try {
       setSyncing(true);
       setSyncBanner(null);
-      const windowStart = new Date(); windowStart.setDate(windowStart.getDate() - 30);
-      const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 15);
+      const dbk = preset === "all" ? "all" : preset === "7d" ? 7 : preset === "90d" ? 90 : preset === "custom" ? daysBack : 30;
+      const { windowStart: fbStart, windowEnd: fbEnd } = getDateWindowBounds(new Date(), dbk, daysAhead);
+      const tok = fbTok || fbToken;
       const [fetched, events, fbData] = await Promise.all([
         fetchGHLLeads(key),
         fetchGHLAppointments(key).catch(() => []),
-        (fbTok || fbToken) ? fetchFBAdSpend(fbTok || fbToken, windowStart, windowEnd) : Promise.resolve(null),
+        tok ? fetchFBAdSpend(tok, fbStart, fbEnd, selectedFbCampaignIds) : Promise.resolve(null),
       ]);
       if (fetched.length) {
         const enriched = enrichLeadsWithAppointments(fetched, events);
@@ -170,12 +177,12 @@ export default function App() {
     try {
       setSyncing(true);
       setSyncBanner(null);
-      const windowStart = new Date(); windowStart.setDate(windowStart.getDate() - 30);
-      const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 15);
+      const dbk = preset === "all" ? "all" : preset === "7d" ? 7 : preset === "90d" ? 90 : preset === "custom" ? daysBack : 30;
+      const { windowStart: fbStart, windowEnd: fbEnd } = getDateWindowBounds(new Date(), dbk, daysAhead);
       const [fetched, events, fbData] = await Promise.all([
         fetchGHLLeads(apiKey.trim()),
         fetchGHLAppointments(apiKey.trim()).catch((e) => { console.warn("Calendar fetch failed:", e.message); return []; }),
-        fbToken ? fetchFBAdSpend(fbToken, windowStart, windowEnd) : Promise.resolve(null),
+        fbToken ? fetchFBAdSpend(fbToken, fbStart, fbEnd, selectedFbCampaignIds) : Promise.resolve(null),
       ]);
       if (!fetched.length) {
         setSyncBanner({ err: true, msg: "No opportunities returned for this pipeline. Check pipeline ID in .env or GHL." });
@@ -216,9 +223,17 @@ export default function App() {
   }
 
   const now = new Date();
+  /** Effective lower bound: presets override the manual daysBack input. */
+  const effectiveDaysBack = useMemo(() => {
+    if (preset === "all") return "all";
+    if (preset === "7d")  return 7;
+    if (preset === "30d") return 30;
+    if (preset === "90d") return 90;
+    return daysBack;
+  }, [preset, daysBack]);
   const { windowStart, windowEnd } = useMemo(
-    () => getDateWindowBounds(new Date(), daysBack, daysAhead),
-    [daysBack, daysAhead],
+    () => getDateWindowBounds(new Date(), effectiveDaysBack, daysAhead),
+    [effectiveDaysBack, daysAhead],
   );
 
   const windowLeads = useMemo(
@@ -465,18 +480,49 @@ export default function App() {
           </div>
           <div style={{ width:1, height:20, background:BRD }}/>
           <div style={{ fontSize:13, color:MUT }}>Roofing Lead Pipeline</div>
-          <div style={{ fontSize:10, color:"#2a3f5a" }}>{windowStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} &ndash; {windowEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}</div>
+          <div style={{ fontSize:10, color:"#2a3f5a" }}>
+            {preset === "all"
+              ? "All time"
+              : `${windowStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${windowEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`}
+          </div>
           {lastSync && <div style={{ fontSize:11, color:"#2a3f5a" }}>synced {new Date(lastSync).toLocaleDateString()}</div>}
           <button className="hov" onClick={handleLogout} style={{ background:"none", border:`1px solid #a78bfa40`, borderRadius:6, color:"#a78bfa", fontSize:11, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>Lock</button>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
-          <label style={{ fontSize:11, color:MUT, display:"flex", alignItems:"center", gap:6 }}>
-            −{""}
-            <input type="number" min={7} max={120} value={daysBack} onChange={e => setDaysBack(Number(e.target.value)||30)} style={{ ...inp, width:52, padding:"4px 6px" }} />
-            d / +
-            <input type="number" min={0} max={90} value={daysAhead} onChange={e => setDaysAhead(Number(e.target.value)||15)} style={{ ...inp, width:52, padding:"4px 6px" }} />
-            d
-          </label>
+          <div style={{ display:"flex", border:`1px solid ${BRD}`, borderRadius:6, overflow:"hidden" }}>
+            {[
+              { id: "7d",  label: "7d"  },
+              { id: "30d", label: "30d" },
+              { id: "90d", label: "90d" },
+              { id: "all", label: "All time" },
+            ].map(p => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setPreset(p.id)}
+                style={{
+                  background: preset === p.id ? BLUE : "transparent",
+                  color: preset === p.id ? "#fff" : MUT,
+                  border: "none",
+                  padding: "5px 10px",
+                  fontSize: 11,
+                  fontFamily: "inherit",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  borderRight: `1px solid ${BRD}`,
+                }}
+              >{p.label}</button>
+            ))}
+          </div>
+          {preset === "custom" && (
+            <label style={{ fontSize:11, color:MUT, display:"flex", alignItems:"center", gap:6 }}>
+              −
+              <input type="number" min={1} max={3650} value={daysBack} onChange={e => setDaysBack(Number(e.target.value)||30)} style={{ ...inp, width:52, padding:"4px 6px" }} />
+              d / +
+              <input type="number" min={0} max={365} value={daysAhead} onChange={e => setDaysAhead(Number(e.target.value)||15)} style={{ ...inp, width:52, padding:"4px 6px" }} />
+              d
+            </label>
+          )}
           {syncing && <div style={{ fontSize:11, color:"#f59e0b", marginRight:4 }}>Syncing...</div>}
           {apiKey && <button className="hov" style={btn("#14532d","#22c55e","#22c55e40")} onClick={doSync} disabled={syncing}>Refresh</button>}
           <button className="hov" style={btn("#1a2f4a","#60a5fa","#3b82f640")} onClick={() => setShowSync(true)}>{apiKey ? "GHL Settings" : "Connect GHL"}</button>
@@ -935,8 +981,79 @@ export default function App() {
               </div>
               {adSpend && adSpend.spend > 0 && (
                 <div style={{ background:"#0a1628", border:`1px solid #f5920b30`, borderRadius:8, padding:10, marginTop:8, fontSize:12, color:"#fbbf24" }}>
-                  Ad Spend (45d): <strong>${adSpend.spend.toLocaleString(undefined,{maximumFractionDigits:2})}</strong>
+                  Ad Spend: <strong>${adSpend.spend.toLocaleString(undefined,{maximumFractionDigits:2})}</strong>
                   {adSpend.clicks > 0 && <span style={{ color:MUT }}> &middot; {adSpend.clicks.toLocaleString()} clicks &middot; {adSpend.impressions.toLocaleString()} impressions</span>}
+                </div>
+              )}
+
+              {fbToken && (
+                <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${BRD}` }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                    <div style={{ fontSize:11, color:MUT, letterSpacing:.5 }}>
+                      Pipeline Campaigns ({selectedFbCampaignIds.length} selected{fbCampaigns.length ? ` of ${fbCampaigns.length}` : ""})
+                    </div>
+                    <button
+                      type="button"
+                      className="hov"
+                      onClick={async () => {
+                        setFbCampaignsLoading(true);
+                        const list = await fetchFBCampaigns(fbToken);
+                        setFbCampaigns(list);
+                        setFbCampaignsLoading(false);
+                        if (!list.length) flash("No campaigns returned. Check the FB token has ads_read permission.", true);
+                      }}
+                      disabled={fbCampaignsLoading}
+                      style={{ ...btn("#1a2f4a","#60a5fa","#3b82f640"), fontSize:11, padding:"4px 10px" }}
+                    >
+                      {fbCampaignsLoading ? "Loading..." : (fbCampaigns.length ? "Refresh list" : "Load campaigns")}
+                    </button>
+                  </div>
+                  {fbCampaigns.length > 0 && (
+                    <>
+                      <div style={{ display:"flex", gap:8, marginBottom:6 }}>
+                        <button
+                          type="button"
+                          className="hov"
+                          onClick={() => setSelectedFbCampaignIds(fbCampaigns.map(c => c.id))}
+                          style={{ ...btn("transparent",MUT,BRD), fontSize:10, padding:"3px 8px" }}
+                        >Select all</button>
+                        <button
+                          type="button"
+                          className="hov"
+                          onClick={() => setSelectedFbCampaignIds([])}
+                          style={{ ...btn("transparent",MUT,BRD), fontSize:10, padding:"3px 8px" }}
+                        >Clear</button>
+                      </div>
+                      <div style={{ maxHeight:180, overflowY:"auto", border:`1px solid ${BRD}`, borderRadius:6, background:"#0a1628" }}>
+                        {[...fbCampaigns]
+                          .sort((a,b) => (b.lifetimeSpend||0) - (a.lifetimeSpend||0))
+                          .map(c => {
+                            const checked = selectedFbCampaignIds.includes(c.id);
+                            return (
+                              <label key={c.id} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 10px", borderBottom:`1px solid ${BRD}`, cursor:"pointer", fontSize:11 }}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) setSelectedFbCampaignIds(ids => [...new Set([...ids, c.id])]);
+                                    else setSelectedFbCampaignIds(ids => ids.filter(id => id !== c.id));
+                                  }}
+                                />
+                                <span style={{ flex:1, color:c.status === "ACTIVE" ? "#e2e8f0" : MUT, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                  {c.name}
+                                </span>
+                                <span style={{ fontSize:10, color:MUT, fontFamily:"'DM Mono',monospace" }}>
+                                  {c.status === "ACTIVE" ? "" : `${c.status} · `}${(c.lifetimeSpend||0).toLocaleString(undefined,{maximumFractionDigits:0})}
+                                </span>
+                              </label>
+                            );
+                          })}
+                      </div>
+                    </>
+                  )}
+                  <div style={{ fontSize:11, color:"#475569", marginTop:6, lineHeight:1.6 }}>
+                    Ad spend totals only count selected campaigns. Leave empty to include the entire ad account.
+                  </div>
                 </div>
               )}
             </div>

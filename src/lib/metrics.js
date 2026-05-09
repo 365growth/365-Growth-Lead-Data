@@ -1,10 +1,17 @@
 import { ALL_SID, SID } from "../constants/stages.js";
 
-/** @param {Date} [now] */
+/**
+ * @param {Date} [now]
+ * @param {number|"all"} [daysBack]  pass "all" to disable the lower bound
+ * @param {number} [daysAhead]
+ */
 export function getDateWindowBounds(now = new Date(), daysBack = 30, daysAhead = 15) {
-  const windowStart = new Date(now);
-  windowStart.setDate(windowStart.getDate() - daysBack);
-  windowStart.setHours(0, 0, 0, 0);
+  const windowStart = daysBack === "all" ? new Date(0) : (() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - daysBack);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
   const windowEnd = new Date(now);
   windowEnd.setDate(windowEnd.getDate() + daysAhead);
   windowEnd.setHours(23, 59, 59, 999);
