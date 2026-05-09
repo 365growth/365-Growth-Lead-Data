@@ -114,6 +114,15 @@ function mapGHLStage(ghlStageId, ghlStageName) {
 
 function nullSafe(v) { return (v && v !== "undefined" && v !== "null") ? v : ""; }
 
+/** Format an ISO timestamp as YYYY-MM-DD in the browser's local timezone. */
+function toLocalDateString(iso) {
+  const d = new Date(iso);
+  const yr = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${yr}-${mo}-${da}`;
+}
+
 async function fetchCustomFieldDefs(apiKey) {
   try {
     const res = await ghlFetch(`${GHL_BASE}/locations/${GHL_LOC}/customFields`, {
@@ -181,7 +190,10 @@ function parseGHLOpportunity(opp, fullContact) {
     crewSize:      findCF("crew_size"),
     yearsInBiz:    findCF("how_long_have_you_been_in_business"),
     website:       nullSafe(contact.website) || findCF("do_you_have_a_website", "website") || "",
-    dateAdded:     opp.createdAt ? opp.createdAt.split("T")[0] : new Date().toISOString().split("T")[0],
+    /* Use the user's local TZ so a lead created at 9 PM CST on Apr 8 (Apr 9 UTC)
+     * is bucketed on Apr 8 — matching how GHL's UI shows it for the same user. */
+    dateAdded:     toLocalDateString(opp.createdAt || new Date().toISOString()),
+    updatedAt:     opp.updatedAt ? toLocalDateString(opp.updatedAt) : null,
     source:        opp.source || contact.source || "Facebook Ad",
     value:         opp.monetaryValue ?? 1500,
     notes:         opp.notes || "",

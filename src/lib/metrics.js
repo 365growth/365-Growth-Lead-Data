@@ -23,10 +23,25 @@ export function getDateWindowBounds(now = new Date(), daysBack = 30, daysAhead =
   return { windowStart, windowEnd };
 }
 
+/**
+ * Compare on YYYY-MM-DD calendar dates in the dashboard's local TZ instead of
+ * raw Date objects. Lead.dateAdded is already a local YYYY-MM-DD string set by
+ * the GHL adapter; convert windowStart/End the same way to avoid UTC drift.
+ */
+function toLocalYMD(d) {
+  const yr = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const da = String(d.getDate()).padStart(2, "0");
+  return `${yr}-${mo}-${da}`;
+}
+
 export function filterLeadsInWindow(leads, windowStart, windowEnd) {
+  const startStr = windowStart.getTime() === 0 ? "0000-00-00" : toLocalYMD(windowStart);
+  const endStr = toLocalYMD(windowEnd);
   return leads.filter(l => {
-    const d = new Date(l.dateAdded || 0);
-    return d >= windowStart && d <= windowEnd;
+    const ld = (l.dateAdded || "").slice(0, 10);
+    if (!ld) return false;
+    return ld >= startStr && ld <= endStr;
   });
 }
 
