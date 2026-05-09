@@ -9,6 +9,21 @@ export function resetGhlSyncState() {
   _cfDefs = {};
 }
 
+/**
+ * GHL allows ~100 req/10s per location. Wrap fetch with retry on 429 +
+ * exponential backoff so concurrent contact/calendar lookups don't drop data.
+ */
+async function ghlFetch(url, init = {}, attempt = 0) {
+  const res = await fetch(url, init);
+  if (res.status === 429 && attempt < 4) {
+    const retryAfter = Number(res.headers.get("Retry-After")) || 0;
+    const delayMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(8000, 500 * Math.pow(2, attempt));
+    await new Promise(r => setTimeout(r, delayMs + Math.random() * 200));
+    return ghlFetch(url, init, attempt + 1);
+  }
+  return res;
+}
+
 export function getGhlStageMap() {
   return _ghlStageMap;
 }
@@ -20,7 +35,7 @@ async function fetchPipelineStages(apiKey) {
   ];
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, {
+      const res = await ghlFetch(url, {
         headers: { Authorization: `Bearer ${apiKey}`, Version: "2021-07-28", Accept: "application/json" },
       });
       if (!res.ok) continue;
@@ -80,7 +95,7 @@ function nullSafe(v) { return (v && v !== "undefined" && v !== "null") ? v : "";
 
 async function fetchCustomFieldDefs(apiKey) {
   try {
-    const res = await fetch(`${GHL_BASE}/locations/${GHL_LOC}/customFields`, {
+    const res = await ghlFetch(`${GHL_BASE}/locations/${GHL_LOC}/customFields`, {
       headers: { Authorization: `Bearer ${apiKey}`, Version: "2021-07-28", Accept: "application/json" },
     });
     if (!res.ok) return {};
@@ -170,7 +185,7 @@ function parseGHLOpportunity(opp, fullContact) {
 }
 
 async function fetchGHLContact(apiKey, contactId) {
-  const res = await fetch(`${GHL_BASE}/contacts/${contactId}`, {
+  const res = await ghlFetch(`${GHL_BASE}/contacts/${contactId}`, {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       Version: "2021-07-28",
@@ -202,7 +217,7 @@ export async function fetchGHLLeads(apiKey) {
     });
     if (startAfterId) params.set("startAfterId", startAfterId);
 
-    const res = await fetch(`${GHL_BASE}/opportunities/search?${params}`, {
+    const res = await ghlFetch(`${GHL_BASE}/opportunities/search?${params}`, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Version: "2021-07-28",
@@ -235,11 +250,12 @@ export async function fetchGHLLeads(apiKey) {
   const contactCache = {};
   const contactIds = [...new Set(allOpps.map(o => o.contactId).filter(Boolean))];
 
-  for (let i = 0; i < contactIds.length; i += 3) {
-    const batch = contactIds.slice(i, i + 3);
+  const BATCH = 2;
+  for (let i = 0; i < contactIds.length; i += BATCH) {
+    const batch = contactIds.slice(i, i + BATCH);
     const results = await Promise.all(batch.map(cid => fetchGHLContact(apiKey, cid).catch(() => null)));
     results.forEach((c, idx) => { if (c) contactCache[batch[idx]] = c; });
-    if (i + 3 < contactIds.length) await new Promise(r => setTimeout(r, 350));
+    if (i + BATCH < contactIds.length) await new Promise(r => setTimeout(r, 500));
   }
 
   return allOpps.map(opp => parseGHLOpportunity(opp, contactCache[opp.contactId] || null));
@@ -262,7 +278,7 @@ export async function fetchGHLAppointments(apiKey) {
 
   let calendarIds = [];
   try {
-    const cRes = await fetch(`${GHL_BASE}/calendars/?locationId=${GHL_LOC}`, { headers });
+    const cRes = await ghlFetch(`${GHL_BASE}/calendars/?locationId=${GHL_LOC}`, { headers });
     if (cRes.ok) {
       const cData = await cRes.json();
       calendarIds = (cData.calendars || []).map(c => c.id);
@@ -281,7 +297,7 @@ export async function fetchGHLAppointments(apiKey) {
         startTime: String(startDate.getTime()),
         endTime: String(endDate.getTime()),
       });
-      let res = await fetch(`${GHL_BASE}/calendars/events?${params}`, { headers });
+      let res = await ghlFetch(`${GHL_BASE}/calendars/events?${params}`, { headers });
       let data = res.ok ? await res.json() : {};
       let events = data.events || [];
 
@@ -292,7 +308,7 @@ export async function fetchGHLAppointments(apiKey) {
           startTime: startDate.toISOString(),
           endTime: endDate.toISOString(),
         });
-        res = await fetch(`${GHL_BASE}/calendars/events?${p2}`, { headers });
+        res = await ghlFetch(`${GHL_BASE}/calendars/events?${p2}`, { headers });
         data = res.ok ? await res.json() : {};
         events = data.events || [];
       }
@@ -312,7 +328,7 @@ export async function fetchGHLAppointments(apiKey) {
           startDate: startDate.toISOString(),
           endDate: endDate.toISOString(),
         });
-        const r3 = await fetch(`${GHL_BASE}/calendars/${calId}/events?${p3}`, { headers });
+        const r3 = await ghlFetch(`${GHL_BASE}/calendars/${calId}/events?${p3}`, { headers });
         if (r3.ok) {
           const d3 = await r3.json();
           console.log(`calendars/${calId}/events:`, d3);
@@ -330,7 +346,7 @@ export async function fetchGHLAppointments(apiKey) {
         startDate: String(startDate.getTime()),
         endDate: String(endDate.getTime()),
       });
-      const r4 = await fetch(`${GHL_BASE}/appointments/?${p4}`, { headers });
+      const r4 = await ghlFetch(`${GHL_BASE}/appointments/?${p4}`, { headers });
       if (r4.ok) {
         const d4 = await r4.json();
         console.log("appointments/ response:", d4);
@@ -412,7 +428,7 @@ export function enrichLeadsWithAppointments(leads, events, now = new Date()) {
 /** Debug helper: raw opportunities + contact + calendars (uses same auth as app). */
 export async function debugGHLRaw(apiKey) {
   const params = new URLSearchParams({ location_id: GHL_LOC, pipeline_id: GHL_PIPE, limit: "5" });
-  const res = await fetch(`${GHL_BASE}/opportunities/search?${params}`, {
+  const res = await ghlFetch(`${GHL_BASE}/opportunities/search?${params}`, {
     headers: { Authorization: `Bearer ${apiKey}`, Version: "2021-07-28", Accept: "application/json" },
   });
   const data = await res.json();
@@ -429,7 +445,7 @@ export async function debugGHLRaw(apiKey) {
     console.log("All opp keys:", Object.keys(opp));
 
     if (opp.contactId) {
-      const cRes = await fetch(`${GHL_BASE}/contacts/${opp.contactId}`, {
+      const cRes = await ghlFetch(`${GHL_BASE}/contacts/${opp.contactId}`, {
         headers: { Authorization: `Bearer ${apiKey}`, Version: "2021-07-28", Accept: "application/json" },
       });
       const cData = await cRes.json();
@@ -443,7 +459,7 @@ export async function debugGHLRaw(apiKey) {
     }
   }
   console.log("=== FETCHING CUSTOM FIELD DEFINITIONS ===");
-  const cfRes = await fetch(`${GHL_BASE}/locations/${GHL_LOC}/customFields`, {
+  const cfRes = await ghlFetch(`${GHL_BASE}/locations/${GHL_LOC}/customFields`, {
     headers: { Authorization: `Bearer ${apiKey}`, Version: "2021-07-28", Accept: "application/json" },
   });
   if (cfRes.ok) {
@@ -458,13 +474,13 @@ export async function debugGHLRaw(apiKey) {
   console.log(`=== CALENDAR: searching ${start.toISOString()} → ${end.toISOString()} ===`);
 
   const calParams = new URLSearchParams({ locationId: GHL_LOC, calendarId: GHL_CAL, startTime: start.toISOString(), endTime: end.toISOString() });
-  const calRes2 = await fetch(`${GHL_BASE}/calendars/events?${calParams}`, {
+  const calRes2 = await ghlFetch(`${GHL_BASE}/calendars/events?${calParams}`, {
     headers: { Authorization: `Bearer ${apiKey}`, Version: "2021-07-28", Accept: "application/json" },
   });
   const calData = await calRes2.json();
   console.log("=== calendars/events ===", JSON.stringify(calData, null, 2));
 
-  const calsRes = await fetch(`${GHL_BASE}/calendars/?locationId=${GHL_LOC}`, {
+  const calsRes = await ghlFetch(`${GHL_BASE}/calendars/?locationId=${GHL_LOC}`, {
     headers: { Authorization: `Bearer ${apiKey}`, Version: "2021-07-28", Accept: "application/json" },
   });
   if (calsRes.ok) {
