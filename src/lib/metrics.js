@@ -30,8 +30,10 @@ export function countsByStage(windowLeads, allSid = ALL_SID) {
 export function computeDashboardMetrics(windowLeads, counts) {
   const total = windowLeads.length;
 
-  const beyondNew      = [SID.BOOKED, SID.ATTENDED, SID.TRIAL, SID.PAID, SID.WON, SID.CANCEL, SID.NOSHOW, SID.LOST];
-  const beyondBooked   = [SID.ATTENDED, SID.TRIAL, SID.PAID, SID.WON, SID.LOST];
+  // DQ here implies a disqualification call took place, so it counts as both
+  // booked and attended even though it's a side-stage in the GHL pipeline.
+  const beyondNew      = [SID.BOOKED, SID.ATTENDED, SID.TRIAL, SID.PAID, SID.WON, SID.CANCEL, SID.NOSHOW, SID.LOST, SID.DQ];
+  const beyondBooked   = [SID.ATTENDED, SID.TRIAL, SID.PAID, SID.WON, SID.LOST, SID.DQ];
   const beyondAttended = [SID.TRIAL, SID.PAID, SID.WON];
 
   const funnelNew      = total;

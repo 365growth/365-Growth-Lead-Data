@@ -123,6 +123,19 @@ describe("computeDashboardMetrics", () => {
       expect(m.showUpRate).toBe(0);
     });
 
+    it("counts Disqualified, Free Trial Started, and Closed Won leads as showed via stage fallback", () => {
+      const windowLeads = [
+        { stageId: SID.DQ,    dateAdded: "2026-04-01", value: 0 },
+        { stageId: SID.TRIAL, dateAdded: "2026-04-02", value: 0 },
+        { stageId: SID.WON,   dateAdded: "2026-04-03", value: 1500 },
+      ];
+      const counts = countsByStage(windowLeads, ALL_SID);
+      const m = computeDashboardMetrics(windowLeads, counts);
+      expect(m.funnelBooked).toBe(3);
+      expect(m.leadsAttended).toBe(3);
+      expect(m.showUpRate).toBe(100);
+    });
+
     it("counts a Closed Won lead with no appt data as a show via stage fallback", () => {
       const windowLeads = [
         { stageId: SID.WON, dateAdded: "2026-04-01", value: 1500 },
