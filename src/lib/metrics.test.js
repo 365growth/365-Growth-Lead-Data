@@ -65,6 +65,26 @@ describe("countsByStage", () => {
 });
 
 describe("computeDashboardMetrics", () => {
+  it("falls back to mrrPerDeal when a Closed Won lead has no GHL monetary value", () => {
+    const windowLeads = [
+      { stageId: SID.WON, dateAdded: "2026-04-02", value: 0 },
+      { stageId: SID.PAID, dateAdded: "2026-04-03", value: 0 },
+    ];
+    const counts = countsByStage(windowLeads, ALL_SID);
+    const m = computeDashboardMetrics(windowLeads, counts, 2500);
+    expect(m.mrr).toBe(5000);
+  });
+
+  it("prefers GHL monetary value over mrrPerDeal when both are present", () => {
+    const windowLeads = [
+      { stageId: SID.WON, dateAdded: "2026-04-02", value: 4000 },
+      { stageId: SID.WON, dateAdded: "2026-04-03", value: 0 },
+    ];
+    const counts = countsByStage(windowLeads, ALL_SID);
+    const m = computeDashboardMetrics(windowLeads, counts, 2500);
+    expect(m.mrr).toBe(6500);
+  });
+
   it("computes totals and rates for a minimal set", () => {
     const windowLeads = [
       { stageId: SID.NEW, dateAdded: "2026-04-01", value: 0 },
