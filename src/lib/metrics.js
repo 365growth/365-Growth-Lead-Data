@@ -30,13 +30,13 @@ export function countsByStage(windowLeads, allSid = ALL_SID) {
 export function computeDashboardMetrics(windowLeads, counts) {
   const total = windowLeads.length;
 
-  const beyondNew      = [SID.BOOKED, SID.ATTENDED, SID.TRIAL, SID.PAID, SID.WON, SID.CANCEL, SID.NOSHOW, SID.RESCHED, SID.DQ, SID.LOST];
+  const beyondNew      = [SID.BOOKED, SID.ATTENDED, SID.TRIAL, SID.PAID, SID.WON, SID.CANCEL, SID.NOSHOW, SID.LOST];
   const beyondBooked   = [SID.ATTENDED, SID.TRIAL, SID.PAID, SID.WON, SID.LOST];
   const beyondAttended = [SID.TRIAL, SID.PAID, SID.WON];
 
   const funnelNew      = total;
-  const funnelBooked   = windowLeads.filter(l => l.apptDate || beyondNew.includes(l.stageId)).length;
-  const leadsAttended  = windowLeads.filter(l => beyondBooked.includes(l.stageId) || l.apptStatus === "showed").length;
+  const funnelBooked   = windowLeads.filter(l => l.hadPastAppt || beyondNew.includes(l.stageId)).length;
+  const leadsAttended  = windowLeads.filter(l => l.everShowed || beyondBooked.includes(l.stageId)).length;
   const funnelAttended = leadsAttended;
   const funnelTrial    = windowLeads.filter(l => beyondAttended.includes(l.stageId)).length;
   const funnelWon      = windowLeads.filter(l => [SID.PAID, SID.WON].includes(l.stageId)).length;
@@ -48,18 +48,17 @@ export function computeDashboardMetrics(windowLeads, counts) {
 
   const leadsWithAppt = windowLeads.filter(l => l.apptDate).length;
 
-  const funnelBookedForRate = funnelBooked;
-  const showUpRate = funnelBookedForRate > 0 ? Math.round((leadsAttended / funnelBookedForRate) * 100) : 0;
+  const showUpRate = funnelBooked > 0 ? Math.round((leadsAttended / funnelBooked) * 100) : 0;
 
   const stageNoShow      = counts[SID.NOSHOW] || 0;
   const stageCancelled   = counts[SID.CANCEL] || 0;
-  const stageRescheduled = counts[SID.RESCHED] || 0;
   const stageDQ          = counts[SID.DQ] || 0;
   const stageLost        = counts[SID.LOST] || 0;
+  const stageRescheduled = 0;
 
-  const totalNoShow      = stageNoShow      + windowLeads.filter(l => l.apptStatus === "no_show"     && l.stageId !== SID.NOSHOW).length;
-  const totalCancelled   = stageCancelled   + windowLeads.filter(l => l.apptStatus === "cancelled"   && l.stageId !== SID.CANCEL).length;
-  const totalRescheduled = stageRescheduled + windowLeads.filter(l => l.apptStatus === "rescheduled" && l.stageId !== SID.RESCHED).length;
+  const totalNoShow      = stageNoShow    + windowLeads.filter(l => l.latestPastApptStatus === "no_show"     && l.stageId !== SID.NOSHOW).length;
+  const totalCancelled   = stageCancelled + windowLeads.filter(l => l.latestPastApptStatus === "cancelled"   && l.stageId !== SID.CANCEL).length;
+  const totalRescheduled = windowLeads.filter(l => l.latestPastApptStatus === "rescheduled").length;
 
   const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
   const apptPct = (n) => leadsWithAppt > 0 ? Math.round((n / leadsWithAppt) * 100) : 0;
