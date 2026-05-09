@@ -14,6 +14,18 @@ describe("getDateWindowBounds", () => {
     expect(windowStart.getTime()).toBeLessThan(windowEnd.getTime());
   });
 
+  it("'last 30 days' is exactly 30 calendar days ending today (matches GHL/FB UI)", () => {
+    const anchor = new Date("2026-05-08T20:00:00Z");
+    const { windowStart } = getDateWindowBounds(anchor, 30, 0);
+    expect(windowStart.toISOString().slice(0, 10)).toBe("2026-04-09");
+  });
+
+  it("'last 7 days' starts six days before today", () => {
+    const anchor = new Date("2026-05-08T20:00:00Z");
+    const { windowStart } = getDateWindowBounds(anchor, 7, 0);
+    expect(windowStart.toISOString().slice(0, 10)).toBe("2026-05-02");
+  });
+
   it("with daysBack='all' uses epoch as the lower bound so every lead passes", () => {
     const anchor = new Date("2026-04-08T12:00:00Z");
     const { windowStart, windowEnd } = getDateWindowBounds(anchor, "all", 15);

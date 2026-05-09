@@ -1,6 +1,11 @@
 import { ALL_SID, SID } from "../constants/stages.js";
 
 /**
+ * "Last N days" = a window of exactly N calendar days ending today (today
+ * inclusive). So `daysBack=30` with anchor=May 8 gives windowStart=Apr 9, not
+ * Apr 8 — matching how GHL, Google Analytics, FB Ads Manager, etc. interpret
+ * "last 30 days".
+ *
  * @param {Date} [now]
  * @param {number|"all"} [daysBack]  pass "all" to disable the lower bound
  * @param {number} [daysAhead]
@@ -8,7 +13,7 @@ import { ALL_SID, SID } from "../constants/stages.js";
 export function getDateWindowBounds(now = new Date(), daysBack = 30, daysAhead = 15) {
   const windowStart = daysBack === "all" ? new Date(0) : (() => {
     const d = new Date(now);
-    d.setDate(d.getDate() - daysBack);
+    d.setDate(d.getDate() - (daysBack - 1));
     d.setHours(0, 0, 0, 0);
     return d;
   })();
