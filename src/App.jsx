@@ -620,7 +620,7 @@ export default function App() {
           </div>
           <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
             <button type="button" className="hov" onClick={exportCsv} style={{ ...btn("#1a2f4a", "#94a3b8", BRD), fontSize:12 }} disabled={!filtered.length}>Export CSV</button>
-            <input style={{ ...inp, width:240, padding:"7px 12px" }} placeholder="Search company, owner, market..." value={q} onChange={e => setQ(e.target.value)} />
+            <input type="search" name="lead-search" autoComplete="off" style={{ ...inp, width:240, padding:"7px 12px" }} placeholder="Search company, owner, market..." value={q} onChange={e => setQ(e.target.value)} />
           </div>
         </div>
 
