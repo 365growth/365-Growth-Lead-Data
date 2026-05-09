@@ -53,8 +53,14 @@ export function countsByStage(windowLeads, allSid = ALL_SID) {
   return counts;
 }
 
-/** Core funnel / KPI math used by the dashboard (pure, testable). */
-export function computeDashboardMetrics(windowLeads, counts) {
+/**
+ * Core funnel / KPI math used by the dashboard (pure, testable).
+ * @param {Array} windowLeads
+ * @param {Object} counts
+ * @param {number} [mrrPerDeal=2500] dollar value to attribute to each WON/PAID
+ *   lead when the GHL opportunity has no explicit monetaryValue
+ */
+export function computeDashboardMetrics(windowLeads, counts, mrrPerDeal = 2500) {
   const total = windowLeads.length;
 
   // DQ here implies a disqualification call took place, so it counts as both
@@ -73,7 +79,7 @@ export function computeDashboardMetrics(windowLeads, counts) {
   const won        = counts[SID.WON] || 0;
   const closedPaid = counts[SID.PAID] || 0;
   const trials     = counts[SID.TRIAL] || 0;
-  const mrr        = windowLeads.filter(l => [SID.WON, SID.PAID].includes(l.stageId)).reduce((s,l) => s + (l.value||0), 0);
+  const mrr        = windowLeads.filter(l => [SID.WON, SID.PAID].includes(l.stageId)).reduce((s,l) => s + (l.value > 0 ? l.value : mrrPerDeal), 0);
 
   const leadsWithAppt = windowLeads.filter(l => l.apptDate).length;
 

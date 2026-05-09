@@ -43,6 +43,7 @@ export default function App() {
   const [daysAhead, setDaysAhead] = useState(15);
   const [customStart, setCustomStart] = useState(""); // YYYY-MM-DD
   const [customEnd,   setCustomEnd]   = useState(""); // YYYY-MM-DD
+  const [mrrPerDeal,  setMrrPerDeal]  = useState(2500);
   const [fbCampaigns, setFbCampaigns]               = useState([]);
   const [fbCampaignsLoading, setFbCampaignsLoading] = useState(false);
   const [selectedFbCampaignIds, setSelectedFbCampaignIds] = useState([]);
@@ -60,7 +61,7 @@ export default function App() {
 
   useEffect(() => {
     if (ready && authed) save();
-  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead, preset, customStart, customEnd, selectedFbCampaignIds]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
+  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead, preset, customStart, customEnd, mrrPerDeal, selectedFbCampaignIds]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
 
   useEffect(() => {
     if (!showSync) return;
@@ -106,6 +107,7 @@ export default function App() {
         if (typeof d.preset === "string")    setPreset(d.preset);
         if (typeof d.customStart === "string") setCustomStart(d.customStart);
         if (typeof d.customEnd   === "string") setCustomEnd(d.customEnd);
+        if (typeof d.mrrPerDeal  === "number") setMrrPerDeal(d.mrrPerDeal);
         if (Array.isArray(d.selectedFbCampaignIds)) setSelectedFbCampaignIds(d.selectedFbCampaignIds);
       }
 
@@ -137,7 +139,7 @@ export default function App() {
     try {
       await storageSet(
         PIPE_KEY,
-        JSON.stringify({ leads, lastSync, adSpend, daysBack, daysAhead, preset, customStart, customEnd, selectedFbCampaignIds }),
+        JSON.stringify({ leads, lastSync, adSpend, daysBack, daysAhead, preset, customStart, customEnd, mrrPerDeal, selectedFbCampaignIds }),
       );
       if (apiKey.trim() || fbToken.trim()) {
         await storageSet(CRED_KEY, JSON.stringify({ apiKey, fbToken }));
@@ -277,7 +279,7 @@ export default function App() {
 
   const counts = useMemo(() => countsByStage(windowLeads), [windowLeads]);
 
-  const m = useMemo(() => computeDashboardMetrics(windowLeads, counts), [windowLeads, counts]);
+  const m = useMemo(() => computeDashboardMetrics(windowLeads, counts, mrrPerDeal), [windowLeads, counts, mrrPerDeal]);
 
   const {
     total, funnelNew, funnelBooked, leadsAttended, funnelTrial, funnelWon,
@@ -993,6 +995,25 @@ export default function App() {
               ) : null}
               <div style={{ fontSize:11, color:"#475569", marginTop:6, lineHeight:1.6 }}>
                 Get this from GHL &rarr; Settings &rarr; Business Profile &rarr; API Keys, or create a Private App at marketplace.gohighlevel.com
+              </div>
+
+              <div style={{ marginTop:14, paddingTop:14, borderTop:`1px solid ${BRD}` }}>
+                <div style={{ fontSize:11, color:MUT, marginBottom:6, letterSpacing:.5 }}>MRR per Closed Won deal</div>
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <span style={{ fontSize:14, color:MUT }}>$</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50}
+                    value={mrrPerDeal}
+                    onChange={e => setMrrPerDeal(Number(e.target.value) || 0)}
+                    style={{ ...inp, width:120, padding:"6px 10px" }}
+                  />
+                  <span style={{ fontSize:11, color:MUT }}>/ month</span>
+                </div>
+                <div style={{ fontSize:11, color:"#475569", marginTop:6, lineHeight:1.6 }}>
+                  Used as the dollar value for each Closed Won lead unless GHL has an explicit monetary value on the opportunity.
+                </div>
               </div>
             </div>
 

@@ -195,7 +195,7 @@ function parseGHLOpportunity(opp, fullContact) {
     dateAdded:     toLocalDateString(opp.createdAt || new Date().toISOString()),
     updatedAt:     opp.updatedAt ? toLocalDateString(opp.updatedAt) : null,
     source:        opp.source || contact.source || "Facebook Ad",
-    value:         opp.monetaryValue ?? 1500,
+    value:         opp.monetaryValue ?? 0,
     notes:         opp.notes || "",
     tags:          contact.tags || [],
     businessDescription:  findCF("what_best_describes_your_roofing_business"),
