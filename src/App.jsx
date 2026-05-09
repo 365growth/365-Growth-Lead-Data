@@ -70,23 +70,6 @@ export default function App() {
       .catch(() => setCloudVault(false));
   }, [showSync]);
 
-  /**
-   * Re-fetch FB ad spend whenever the dashboard window changes. Lead data is
-   * pulled once and filtered client-side, but FB spend is window-bounded server-
-   * side, so the operator would otherwise see stale Cost/Lead numbers across
-   * preset switches. Skipped while a full sync is already in-flight.
-   */
-  useEffect(() => {
-    if (!ready || !authed || !fbToken || syncing) return;
-    let cancelled = false;
-    (async () => {
-      const fb = await fetchFBAdSpend(fbToken, windowStart, windowEnd, selectedFbCampaignIds);
-      if (!cancelled && fb) setAdSpend(fb);
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only window + token + campaigns drive the refetch
-  }, [windowStart.getTime(), windowEnd.getTime(), fbToken, selectedFbCampaignIds.join(",")]);
-
   useEffect(() => {
     if (!apiKey) return;
     const interval = setInterval(() => {
@@ -269,6 +252,23 @@ export default function App() {
     }
     return getDateWindowBounds(new Date(), effectiveDaysBack, daysAhead);
   }, [preset, customStart, customEnd, effectiveDaysBack, daysAhead]);
+
+  /**
+   * Re-fetch FB ad spend whenever the dashboard window changes. Lead data is
+   * pulled once and filtered client-side, but FB spend is window-bounded server-
+   * side, so the operator would otherwise see stale Cost/Lead numbers across
+   * preset switches. Skipped while a full sync is already in-flight.
+   */
+  useEffect(() => {
+    if (!ready || !authed || !fbToken || syncing) return;
+    let cancelled = false;
+    (async () => {
+      const fb = await fetchFBAdSpend(fbToken, windowStart, windowEnd, selectedFbCampaignIds);
+      if (!cancelled && fb) setAdSpend(fb);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only window + token + campaigns drive the refetch
+  }, [windowStart.getTime(), windowEnd.getTime(), fbToken, selectedFbCampaignIds.join(",")]);
 
   const windowLeads = useMemo(
     () => filterLeadsInWindow(leads, windowStart, windowEnd),
