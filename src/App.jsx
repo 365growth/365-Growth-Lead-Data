@@ -41,6 +41,8 @@ export default function App() {
   const [preset, setPreset]       = useState("30d"); // "7d" | "30d" | "90d" | "all" | "custom"
   const [daysBack, setDaysBack]   = useState(30);
   const [daysAhead, setDaysAhead] = useState(15);
+  const [customStart, setCustomStart] = useState(""); // YYYY-MM-DD
+  const [customEnd,   setCustomEnd]   = useState(""); // YYYY-MM-DD
   const [fbCampaigns, setFbCampaigns]               = useState([]);
   const [fbCampaignsLoading, setFbCampaignsLoading] = useState(false);
   const [selectedFbCampaignIds, setSelectedFbCampaignIds] = useState([]);
@@ -58,7 +60,7 @@ export default function App() {
 
   useEffect(() => {
     if (ready && authed) save();
-  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead, preset, selectedFbCampaignIds]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
+  }, [leads, ready, authed, apiKey, fbToken, lastSync, adSpend, daysBack, daysAhead, preset, customStart, customEnd, selectedFbCampaignIds]); // eslint-disable-line react-hooks/exhaustive-deps -- persist pipeline + creds
 
   useEffect(() => {
     if (!showSync) return;
@@ -102,6 +104,8 @@ export default function App() {
         if (typeof d.daysBack === "number")  setDaysBack(d.daysBack);
         if (typeof d.daysAhead === "number") setDaysAhead(d.daysAhead);
         if (typeof d.preset === "string")    setPreset(d.preset);
+        if (typeof d.customStart === "string") setCustomStart(d.customStart);
+        if (typeof d.customEnd   === "string") setCustomEnd(d.customEnd);
         if (Array.isArray(d.selectedFbCampaignIds)) setSelectedFbCampaignIds(d.selectedFbCampaignIds);
       }
 
@@ -133,7 +137,7 @@ export default function App() {
     try {
       await storageSet(
         PIPE_KEY,
-        JSON.stringify({ leads, lastSync, adSpend, daysBack, daysAhead, preset, selectedFbCampaignIds }),
+        JSON.stringify({ leads, lastSync, adSpend, daysBack, daysAhead, preset, customStart, customEnd, selectedFbCampaignIds }),
       );
       if (apiKey.trim() || fbToken.trim()) {
         await storageSet(CRED_KEY, JSON.stringify({ apiKey, fbToken }));
@@ -145,13 +149,23 @@ export default function App() {
     } catch { /* ignore */ }
   }
 
+  function currentSyncWindow() {
+    if (preset === "custom" && customStart && customEnd) {
+      return {
+        windowStart: new Date(`${customStart}T00:00:00`),
+        windowEnd:   new Date(`${customEnd}T23:59:59.999`),
+      };
+    }
+    const dbk = preset === "all" ? "all" : preset === "7d" ? 7 : preset === "90d" ? 90 : 30;
+    return getDateWindowBounds(new Date(), dbk, daysAhead);
+  }
+
   async function autoSync(key, fbTok) {
     if (!key) return;
     try {
       setSyncing(true);
       setSyncBanner(null);
-      const dbk = preset === "all" ? "all" : preset === "7d" ? 7 : preset === "90d" ? 90 : preset === "custom" ? daysBack : 30;
-      const { windowStart: fbStart, windowEnd: fbEnd } = getDateWindowBounds(new Date(), dbk, daysAhead);
+      const { windowStart: fbStart, windowEnd: fbEnd } = currentSyncWindow();
       const tok = fbTok || fbToken;
       const [fetched, events, fbData] = await Promise.all([
         fetchGHLLeads(key),
@@ -177,8 +191,7 @@ export default function App() {
     try {
       setSyncing(true);
       setSyncBanner(null);
-      const dbk = preset === "all" ? "all" : preset === "7d" ? 7 : preset === "90d" ? 90 : preset === "custom" ? daysBack : 30;
-      const { windowStart: fbStart, windowEnd: fbEnd } = getDateWindowBounds(new Date(), dbk, daysAhead);
+      const { windowStart: fbStart, windowEnd: fbEnd } = currentSyncWindow();
       const [fetched, events, fbData] = await Promise.all([
         fetchGHLLeads(apiKey.trim()),
         fetchGHLAppointments(apiKey.trim()).catch((e) => { console.warn("Calendar fetch failed:", e.message); return []; }),
@@ -231,10 +244,14 @@ export default function App() {
     if (preset === "90d") return 90;
     return daysBack;
   }, [preset, daysBack]);
-  const { windowStart, windowEnd } = useMemo(
-    () => getDateWindowBounds(new Date(), effectiveDaysBack, daysAhead),
-    [effectiveDaysBack, daysAhead],
-  );
+  const { windowStart, windowEnd } = useMemo(() => {
+    if (preset === "custom" && customStart && customEnd) {
+      const ws = new Date(`${customStart}T00:00:00`); // local midnight
+      const we = new Date(`${customEnd}T23:59:59.999`);
+      return { windowStart: ws, windowEnd: we };
+    }
+    return getDateWindowBounds(new Date(), effectiveDaysBack, daysAhead);
+  }, [preset, customStart, customEnd, effectiveDaysBack, daysAhead]);
 
   const windowLeads = useMemo(
     () => filterLeadsInWindow(leads, windowStart, windowEnd),
@@ -483,7 +500,7 @@ export default function App() {
           <div style={{ fontSize:10, color:"#2a3f5a" }}>
             {preset === "all"
               ? "All time"
-              : `${windowStart.toLocaleDateString("en-US",{month:"short",day:"numeric"})} – ${windowEnd.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`}
+              : `${windowStart.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})} – ${windowEnd.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}`}
           </div>
           {lastSync && <div style={{ fontSize:11, color:"#2a3f5a" }}>synced {new Date(lastSync).toLocaleDateString()}</div>}
           <button className="hov" onClick={handleLogout} style={{ background:"none", border:`1px solid #a78bfa40`, borderRadius:6, color:"#a78bfa", fontSize:11, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>Lock</button>
@@ -491,15 +508,26 @@ export default function App() {
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           <div style={{ display:"flex", border:`1px solid ${BRD}`, borderRadius:6, overflow:"hidden" }}>
             {[
-              { id: "7d",  label: "7d"  },
-              { id: "30d", label: "30d" },
-              { id: "90d", label: "90d" },
-              { id: "all", label: "All time" },
+              { id: "7d",     label: "7d"        },
+              { id: "30d",    label: "30d"       },
+              { id: "90d",    label: "90d"       },
+              { id: "all",    label: "All time"  },
+              { id: "custom", label: "Custom"    },
             ].map(p => (
               <button
                 key={p.id}
                 type="button"
-                onClick={() => setPreset(p.id)}
+                onClick={() => {
+                  setPreset(p.id);
+                  if (p.id === "custom" && (!customStart || !customEnd)) {
+                    const today = new Date();
+                    const thirtyAgo = new Date();
+                    thirtyAgo.setDate(thirtyAgo.getDate() - 29);
+                    const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                    setCustomStart(ymd(thirtyAgo));
+                    setCustomEnd(ymd(today));
+                  }
+                }}
                 style={{
                   background: preset === p.id ? BLUE : "transparent",
                   color: preset === p.id ? "#fff" : MUT,
@@ -516,11 +544,9 @@ export default function App() {
           </div>
           {preset === "custom" && (
             <label style={{ fontSize:11, color:MUT, display:"flex", alignItems:"center", gap:6 }}>
-              −
-              <input type="number" min={1} max={3650} value={daysBack} onChange={e => setDaysBack(Number(e.target.value)||30)} style={{ ...inp, width:52, padding:"4px 6px" }} />
-              d / +
-              <input type="number" min={0} max={365} value={daysAhead} onChange={e => setDaysAhead(Number(e.target.value)||15)} style={{ ...inp, width:52, padding:"4px 6px" }} />
-              d
+              <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} style={{ ...inp, padding:"3px 6px", colorScheme:"dark" }} />
+              →
+              <input type="date" value={customEnd}   onChange={e => setCustomEnd(e.target.value)}   style={{ ...inp, padding:"3px 6px", colorScheme:"dark" }} />
             </label>
           )}
           {syncing && <div style={{ fontSize:11, color:"#f59e0b", marginRight:4 }}>Syncing...</div>}
