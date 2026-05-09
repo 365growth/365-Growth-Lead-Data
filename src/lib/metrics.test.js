@@ -13,6 +13,14 @@ describe("getDateWindowBounds", () => {
     const { windowStart, windowEnd } = getDateWindowBounds(anchor, 30, 15);
     expect(windowStart.getTime()).toBeLessThan(windowEnd.getTime());
   });
+
+  it("with daysBack='all' uses epoch as the lower bound so every lead passes", () => {
+    const anchor = new Date("2026-04-08T12:00:00Z");
+    const { windowStart, windowEnd } = getDateWindowBounds(anchor, "all", 15);
+    expect(windowStart.getTime()).toBe(0);
+    const ancientLead = [{ dateAdded: "2020-01-01" }];
+    expect(filterLeadsInWindow(ancientLead, windowStart, windowEnd)).toHaveLength(1);
+  });
 });
 
 describe("filterLeadsInWindow", () => {
