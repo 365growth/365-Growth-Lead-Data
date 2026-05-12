@@ -1,4 +1,21 @@
 import { useState, useEffect, Fragment, useMemo } from "react";
+
+/**
+ * Strip duplicates from a leads array, keyed by opp.id. Earlier bugs and
+ * concurrent sync calls produced caches with the same lead repeated 5–10x;
+ * this is the safety net that heals existing corruption on the next load
+ * and prevents future accidents from inflating dashboard counts.
+ */
+function dedupeLeadsById(leads) {
+  if (!Array.isArray(leads)) return leads;
+  const seen = new Set();
+  return leads.filter(l => {
+    if (!l || !l.id) return false;
+    if (seen.has(l.id)) return false;
+    seen.add(l.id);
+    return true;
+  });
+}
 import { GHL_CAL, FB_AD_ACCT } from "./config.js";
 import {
   STAGE, ALL_SID, SAMPLE, BLANK, SOURCES, APPT_STATUS, SID, SIDES,
@@ -101,7 +118,13 @@ export default function App() {
 
       if (raw) {
         const d = JSON.parse(raw);
-        if (d.leads?.length) setLeads(d.leads);
+        if (d.leads?.length) {
+          const deduped = dedupeLeadsById(d.leads);
+          if (deduped.length < d.leads.length) {
+            console.warn(`Local cache had ${d.leads.length - deduped.length} duplicate leads — discarding.`);
+          }
+          setLeads(deduped);
+        }
         if (d.lastSync)      setLastSync(d.lastSync);
         if (d.adSpend)       setAdSpend(d.adSpend);
         if (typeof d.daysBack === "number")  setDaysBack(d.daysBack);
@@ -177,7 +200,7 @@ export default function App() {
         tok ? fetchFBAdSpend(tok, fbStart, fbEnd, selectedFbCampaignIds) : Promise.resolve(null),
       ]);
       if (fetched.length) {
-        const enriched = enrichLeadsWithAppointments(fetched, events);
+        const enriched = dedupeLeadsById(enrichLeadsWithAppointments(fetched, events));
         setLeads(enriched);
         const now = new Date().toISOString();
         setLastSync(now);
@@ -206,7 +229,7 @@ export default function App() {
         flash("No opportunities found in this pipeline", true);
         return;
       }
-      const enriched = enrichLeadsWithAppointments(fetched, events);
+      const enriched = dedupeLeadsById(enrichLeadsWithAppointments(fetched, events));
       setLeads(enriched);
       const now = new Date().toISOString();
       setLastSync(now);
