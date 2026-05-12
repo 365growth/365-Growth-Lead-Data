@@ -17,6 +17,7 @@ import {
   fetchGHLAppointments,
   enrichLeadsWithAppointments,
   debugGHLRaw,
+  getGhlStageMap,
 } from "./api/ghl.js";
 
 export default function App() {
@@ -27,6 +28,7 @@ export default function App() {
   const [showAdd, setShowAdd]     = useState(false);
   const [showSync, setShowSync]   = useState(false);
   const [form, setForm]           = useState(BLANK);
+  const [showDebug, setShowDebug] = useState(false);
   const [importTxt, setImportTxt] = useState("");
   const [toast, setToast]         = useState(null);
   const [ready, setReady]         = useState(false);
@@ -523,6 +525,7 @@ export default function App() {
           </div>
           {lastSync && <div style={{ fontSize:11, color:"#2a3f5a" }}>synced {new Date(lastSync).toLocaleDateString()}</div>}
           <button className="hov" onClick={handleLogout} style={{ background:"none", border:`1px solid #a78bfa40`, borderRadius:6, color:"#a78bfa", fontSize:11, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>Lock</button>
+          <button className="hov" onClick={() => setShowDebug(v => !v)} title="Toggle Data Health diagnostic panel" style={{ background:"none", border:`1px solid ${BRD}`, borderRadius:6, color:MUT, fontSize:11, padding:"4px 10px", cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>{showDebug ? "Hide Health" : "Health"}</button>
         </div>
         <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
           <div style={{ display:"flex", border:`1px solid ${BRD}`, borderRadius:6, overflow:"hidden" }}>
@@ -779,6 +782,81 @@ export default function App() {
             </table>
           </div>
         </div>
+
+        {showDebug && (
+          <div style={{ background:SRF, border:`1px solid ${BRD}`, borderRadius:8, padding:16, marginTop:20 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:12 }}>
+              <div style={{ fontSize:13, fontWeight:700, letterSpacing:.5, color:"#a78bfa" }}>DATA HEALTH</div>
+              <button className="hov" onClick={() => setShowDebug(false)} style={{ ...btn("transparent",MUT,BRD), fontSize:11, padding:"3px 10px" }}>Close</button>
+            </div>
+
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))", gap:12, marginBottom:16 }}>
+              <Fld label="Total leads loaded"   val={leads.length} />
+              <Fld label="Leads in window"      val={windowLeads.length} />
+              <Fld label="Window"               val={preset === "all" ? "All time" : `${windowStart.toLocaleDateString()} → ${windowEnd.toLocaleDateString()}`} />
+              <Fld label="Last sync"            val={lastSync ? new Date(lastSync).toLocaleString() : "never"} />
+              <Fld label="FB token"             val={fbToken ? "set" : "missing"} />
+              <Fld label="FB campaigns scoped"  val={selectedFbCampaignIds.length > 0 ? `${selectedFbCampaignIds.length} selected` : "entire account"} />
+              <Fld label="MRR per deal"         val={`$${mrrPerDeal.toLocaleString()}`} />
+            </div>
+
+            <div style={{ fontSize:11, color:MUT, marginBottom:6, letterSpacing:.5 }}>STAGE DISTRIBUTION (current window)</div>
+            <div style={{ background:"#0a1628", border:`1px solid ${BRD}`, borderRadius:6, overflow:"hidden", marginBottom:16 }}>
+              <table style={{ width:"100%", fontSize:11, borderCollapse:"collapse", fontFamily:"'DM Mono',monospace" }}>
+                <thead>
+                  <tr style={{ color:MUT, textAlign:"left" }}>
+                    <th style={{ padding:"6px 10px" }}>GHL stage name</th>
+                    <th style={{ padding:"6px 10px" }}>GHL stage id</th>
+                    <th style={{ padding:"6px 10px" }}>Mapped to (internal)</th>
+                    <th style={{ padding:"6px 10px", textAlign:"right" }}>Count</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    /* Group by raw GHL stage so unmapped stages show separately */
+                    const groups = {};
+                    windowLeads.forEach(l => {
+                      const k = l._rawStageId || l.stageId || "(none)";
+                      if (!groups[k]) groups[k] = { count: 0, name: l._rawStageName || null, mappedTo: l.stageId };
+                      groups[k].count += 1;
+                    });
+                    return Object.entries(groups)
+                      .sort((a,b) => b[1].count - a[1].count)
+                      .map(([rawId, info]) => {
+                        const internal = STAGE[info.mappedTo]?.name || "UNMAPPED → New Lead";
+                        return (
+                          <tr key={rawId} style={{ borderTop:`1px solid ${BRD}` }}>
+                            <td style={{ padding:"6px 10px", color:"#e2e8f0" }}>{info.name || "(needs resync)"}</td>
+                            <td style={{ padding:"6px 10px", color:MUT, fontSize:10 }}>{rawId.slice(0, 8)}...</td>
+                            <td style={{ padding:"6px 10px", color: internal.startsWith("UNMAPPED") ? "#ef4444" : "#22c55e" }}>{internal}</td>
+                            <td style={{ padding:"6px 10px", textAlign:"right" }}>{info.count}</td>
+                          </tr>
+                        );
+                      });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+
+            {(() => {
+              const noContact = windowLeads.filter(l => !l.contactId).length;
+              const noDate    = windowLeads.filter(l => !l.dateAdded).length;
+              const futureLeads = windowLeads.filter(l => l.dateAdded && new Date(l.dateAdded) > new Date()).length;
+              const anomalies = [];
+              if (noContact)   anomalies.push(`${noContact} leads without contactId (custom fields likely missing)`);
+              if (noDate)      anomalies.push(`${noDate} leads without dateAdded`);
+              if (futureLeads) anomalies.push(`${futureLeads} leads with future dateAdded`);
+              return anomalies.length === 0 ? (
+                <div style={{ fontSize:11, color:"#22c55e" }}>✓ No data anomalies detected.</div>
+              ) : (
+                <div style={{ fontSize:11, color:"#fbbf24" }}>
+                  <div style={{ fontWeight:600, marginBottom:4 }}>⚠ Anomalies</div>
+                  {anomalies.map(a => <div key={a}>· {a}</div>)}
+                </div>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {sel && (
