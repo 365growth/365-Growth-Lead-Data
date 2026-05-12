@@ -185,6 +185,8 @@ function parseGHLOpportunity(opp, fullContact) {
     phone:         nullSafe(contact.phone) || "",
     email:         nullSafe(contact.email) || "",
     stageId:       mapGHLStage(opp.pipelineStageId, opp.stageName),
+    _rawStageName: opp.stageName || null,
+    _rawStageId:   opp.pipelineStageId || null,
     jobsPerMonth:  findCF("how_many_roofing_jobs", "roofing_jobs_does"),
     avgJobValue:   findCF("avg_job", "average_job"),
     crewSize:      findCF("crew_size"),
